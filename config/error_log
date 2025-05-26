@@ -1,0 +1,8 @@
+[05-Feb-2025 09:21:26 UTC] PHP Fatal error:  Uncaught Error: Call to undefined function env() in /home/appniacs/nurturenest.appniacs.com/config/database.php:18
+Stack trace:
+#0 {main}
+  thrown in /home/appniacs/nurturenest.appniacs.com/config/database.php on line 18
+[06-May-2025 12:59:24 UTC] PHP Fatal error:  Uncaught Error: Call to undefined function env() in /home/appwebdemo/ilong.appwebdemo.pro/config/app.php:18
+Stack trace:
+#0 {main}
+  thrown in /home/appwebdemo/ilong.appwebdemo.pro/config/app.php on line 18
