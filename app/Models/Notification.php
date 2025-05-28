@@ -12,6 +12,8 @@ class Notification extends Model
         'user_id',
         'message',
         'notifyBy',
+        'action_type',
+        'action_id',
         'seen',
     ];
 

@@ -65,7 +65,7 @@ class GroupPostController extends Controller
             }])
             ->with('likes')
             ->orderBy('created_at', 'desc')
-            ->get(['id', 'description', 'image', 'user_id', 'hide','share','share_person','share_count']);
+            ->get(['id', 'description', 'image', 'user_id', 'hide', 'share', 'share_person', 'share_count']);
 
         $posts = $posts->map(function ($post) use ($userId) {
             $isLiked = $post->likes->contains('user_id', $userId);
@@ -73,7 +73,7 @@ class GroupPostController extends Controller
                 'id' => $post->id,
                 'description' => $post->description,
                 'images' => $post->image ? array_map(function ($path) {
-                    return asset('GroupPosts/' . $path); 
+                    return asset('GroupPosts/' . $path);
                 }, json_decode($post->image)) : [],
                 'user_id' => $post->user->id,
                 'image' => asset('profile_image/' . $post->user->image),
@@ -106,12 +106,12 @@ class GroupPostController extends Controller
                 'comments'
             ])
             ->orderBy('created_at', 'desc')
-            ->get(['id', 'description', 'name', 'content', 'user_id', 'share_count','share_person','share']);
+            ->get(['id', 'description', 'name', 'content', 'user_id', 'share_count', 'share_person', 'share']);
 
         $posts = $posts->map(function ($post) use ($currentUser) {
 
             $isLike = $post->likes->where('user_id', $currentUser->id)->isNotEmpty();
-            
+
             return [
                 'id' => $post->id,
                 'description' => $post->description,
@@ -145,13 +145,15 @@ class GroupPostController extends Controller
 
         $like = Like::where('post_id', $postId)->where('user_id', $userId)->first();
         $groupPost = GroupPost::find($postId);
+
         if (!$groupPost) {
             return response()->json(['message' => 'Group post not found'], 404);
         }
+
         $postOwner = $groupPost->user;
         $fcmToken = $postOwner->fcm_token;
         $UserId = $postOwner->id;
-        // dd($postOwner);
+
         if ($like) {
             $like->delete();
             return response()->json(['message' => 'Like removed']);
@@ -160,13 +162,17 @@ class GroupPostController extends Controller
                 'post_id' => $postId,
                 'user_id' => $userId,
             ]);
+
             $authUser = auth()->user();
 
             Notification::create([
                 'user_id' => $UserId,
-                'message' => $authUser->first_name . ' has Like your Group Post.',
-                'notifyBy' => 'Like Group Post',
+                'message' => $authUser->first_name . ' has liked your group post.',
+                'notifyBy' => 'Group Post Like',
+                'action_type' => 'groupPostLike', // For app click navigation
+                'action_id' => $postId,
             ]);
+
             return response()->json([
                 'message' => 'Post liked',
                 'fcm_token' => $fcmToken,
@@ -175,36 +181,45 @@ class GroupPostController extends Controller
     }
 
 
+
     public function addComment(Request $request, $postId)
     {
         $request->validate([
             'comment' => 'required|string',
         ]);
+
         $groupPost = GroupPost::find($postId);
         if (!$groupPost) {
             return response()->json(['message' => 'Group post not found'], 404);
         }
+
         $postOwner = $groupPost->user;
         $fcmToken = $postOwner->fcm_token;
         $UserId = $postOwner->id;
+
         Comment::create([
             'post_id' => $postId,
             'user_id' => auth()->id(),
             'comment' => $request->comment,
         ]);
+
         $authUser = auth()->user();
 
         Notification::create([
             'user_id' => $UserId,
-            'message' => $authUser->first_name . ' has Commented your Group Post.',
-            'notifyBy' => 'Commented Group Post',
+            'message' => $authUser->first_name . ' has commented on your group post: ' . $request->comment,
+            'notifyBy' => 'Group Post Comment',
+            'action_type' => 'groupPostComment', // for navigation in the app
+            'action_id' => $postId,
         ]);
+
         return response()->json([
             'comment' => $request->comment,
             'fcm_token' => $fcmToken,
             'message' => 'Comment added successfully'
         ]);
     }
+
 
     public function getPostcomments($postId)
     {

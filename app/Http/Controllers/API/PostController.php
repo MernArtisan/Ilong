@@ -110,8 +110,7 @@ class PostController extends Controller
                 'posts' => []
             ]);
         }
-
-        // Fetch user with posts and images
+ 
         $user = User::with(['posts.images', 'posts.likes', 'posts.comments'])
             ->where('id', $userId)
             ->first();
@@ -177,39 +176,45 @@ class PostController extends Controller
 
     public function likePost(Request $request, $postId)
     {
-        $userId = auth()->id();  // Current logged-in user's ID
-        $like = ContentPostLike::where('post_id', $postId)->where('user_id', $userId)->first();  // Check if the user has already liked the post
-        $postOwner = Post::where('id', $postId)->first();  // Get post owner
-        $fcmToken = $postOwner->user->fcm_token;  // Get the post owner's FCM token for notifications
+        $userId = auth()->id();  
+        $like = ContentPostLike::where('post_id', $postId)->where('user_id', $userId)->first();
+        $postOwner = Post::where('id', $postId)->with('user')->first();  // Load user relationship too
+
+        if (!$postOwner) {
+            return response()->json(['status' => false, 'message' => 'Post not found.']);
+        }
+
+        $fcmToken = $postOwner->user->fcm_token ?? null;
 
         if ($like) {
-            // If the user has already liked the post, unlike it
+            // Already liked, so unlike it
             $like->delete();
             return response()->json(['status' => true, 'message' => 'Post unliked successfully.']);
         } else {
-            // If the user has not liked the post, like it
+            // Like the post
             $authUser = auth()->user();
 
-            // Send notification to post owner
             Notification::create([
-                'user_id' => $postOwner->user->id,
-                'message' => $authUser->first_name . ' has liked your post.',
-                'notifyBy' => 'Post Like',
+                'user_id'     => $postOwner->user->id,
+                'message'     => $authUser->first_name . ' has liked your post.',
+                'notifyBy'    => 'Post Like',
+                'action_type' => 'likePost',
+                'action_id'   => $postId,
             ]);
 
-            // Create a like entry for the current user
             ContentPostLike::create([
-                'user_id' => $userId,  // Use the current logged-in user's ID
+                'user_id' => $userId,
                 'post_id' => $postId,
             ]);
 
             return response()->json([
-                'status' => true,
-                'message' => 'Post liked successfully.',
-                'fcm_token' => $fcmToken,  // Include the FCM token for notifications
+                'status'     => true,
+                'message'    => 'Post liked successfully.',
+                'fcm_token'  => $fcmToken,
             ]);
         }
     }
+
 
 
 
@@ -219,14 +224,12 @@ class PostController extends Controller
             'comment' => 'required|string|max:1000',
         ]);
 
-        // Get the owner of the post (assuming Post model has user_id field)
         $postOwner = Post::where('id', $postId)->with('user')->first();
 
         if (!$postOwner) {
             return response()->json(['status' => false, 'message' => 'Post not found.']);
         }
 
-        // Assuming the User model has the fcm_token field
         $fcmToken = $postOwner->user->fcm_token ?? null;
 
         if (!$fcmToken) {
@@ -237,9 +240,12 @@ class PostController extends Controller
 
         Notification::create([
             'user_id' => $postOwner->user->id,
-            'message' => $authUser->first_name . 'has Comment your post ' . $request->comment,
+            'message' => $authUser->first_name . ' has commented on your post: ' . $request->comment,
             'notifyBy' => 'Post Comment',
+            'action_type' => 'commentPost',
+            'action_id' => $postId,
         ]);
+
         $comment = ContentPostComment::create([
             'user_id' => auth()->id(),
             'post_id' => $postId,
@@ -253,6 +259,7 @@ class PostController extends Controller
             'fcm_token' => $fcmToken,
         ]);
     }
+
 
 
     public function followUser(Request $request, $followingId)
@@ -358,8 +365,10 @@ class PostController extends Controller
 
             Notification::create([
                 'user_id' => $originalPoster->id,
-                'message' => $authUser->first_name . ' has Share your post ',
+                'message' => $authUser->first_name . ' has shared your post.',
                 'notifyBy' => 'Post Share To Profile',
+                'action_type' => 'sharePostToProfile',
+                'action_id' => $newPost->id,
             ]);
 
             return response()->json([
@@ -369,46 +378,58 @@ class PostController extends Controller
             ]);
         }
 
-
-
         if ($request->share_to == 'group') {
-            $group = Group::where('creator_id', $user->id)->where('id', $request->group_id)->first();
+            $group = Group::where('id', $request->group_id)->first();
 
-            if (!$group) {
-                return response()->json(['status' => false, 'message' => 'Group not found or you do not have permission.']);
+            $isMember = \DB::table('group_user')
+                ->where('group_id', $group->id)
+                ->where('user_id', $user->id)
+                ->exists();
+
+            if (!$group || !$isMember) {
+                return response()->json([
+                    'status' => false,
+                    'message' => 'Group not found or you do not have permission.'
+                ]);
             }
 
-            // Image Move Logic
+
+            // Move images
             $imagePaths = [];
             foreach ($post->images as $image) {
-                // Get original path from 'public/contentpost' folder
                 $originalPath = public_path('contentpost/' . $image->image_path);
-
-                // Define new path in 'public/GroupPosts/' folder
                 $newPath = public_path('GroupPosts/' . $image->image_path);
 
-                // Ensure GroupPosts directory exists
                 if (!File::exists(public_path('GroupPosts'))) {
                     File::makeDirectory(public_path('GroupPosts'), 0777, true);
                 }
 
-                // Move the image from contentpost to GroupPosts folder
                 if (File::exists($originalPath)) {
                     File::copy($originalPath, $newPath);
                 }
 
-                $imagePaths[] = $image->image_path; // Save new path in array
+                $imagePaths[] = $image->image_path;
             }
 
-            GroupPost::create([
+            $groupPost = GroupPost::create([
                 'group_id' => $group->id,
                 'user_id' => $user->id,
                 'description' => $post->content,
-                'image' => json_encode($imagePaths), // Save the new paths
+                'image' => json_encode($imagePaths),
                 'share' => 1,
                 'share_person' => $originalPoster->first_name . ' ' . $originalPoster->last_name,
                 'hide' => 1,
             ]);
+
+            // Send notification to original poster
+            Notification::create([
+                'user_id' => $originalPoster->id,
+                'message' => $user->first_name . ' has shared your post to a group.',
+                'notifyBy' => 'Post Share To Group',
+                'action_type' => 'sharePostToGroup',
+                'action_id' => $groupPost->id,
+            ]);
+
 
             return response()->json([
                 'status' => true,
@@ -417,9 +438,9 @@ class PostController extends Controller
             ]);
         }
 
-
         return response()->json(['status' => false, 'message' => 'Invalid share option.']);
     }
+
 
 
     public function shareGroupPost(Request $request)
@@ -444,10 +465,10 @@ class PostController extends Controller
         }
 
         $post->increment('share_count');
-
         $sharedToProfile = false;
         $sharedToGroup = false;
 
+        // ✅ Profile Sharing
         if ($request->share_to == 'profile' || $request->share_to == 'both') {
             $newPost = Post::create([
                 'user_id' => $user->id,
@@ -460,47 +481,50 @@ class PostController extends Controller
             ]);
 
             foreach (json_decode($post->image) as $image) {
-                $originalPath = public_path('GroupPosts/' . $image); // Yahan se original image pick karni hai
-                $newPath = public_path('contentpost/' . $image); // Yahan move karna hai
+                $originalPath = public_path('GroupPosts/' . $image);
+                $newPath = public_path('contentpost/' . $image);
 
-                // Folder ka check
                 if (!File::exists(public_path('contentpost'))) {
                     File::makeDirectory(public_path('contentpost'), 0777, true);
                 }
 
-                // Image ko move karo (sirf agar exist karti hai)
                 if (File::exists($originalPath)) {
                     File::copy($originalPath, $newPath);
                 }
 
-                // ✅ Database me sirf file ka naam save ho raha hai (folder ka naam nahi)
                 Image::create([
                     'post_id' => $newPost->id,
-                    'image_path' => $image, // Sirf file name save karna hai
+                    'image_path' => $image,
                 ]);
             }
 
-
             Notification::create([
                 'user_id' => $originalPoster->id,
-                'message' => $user->first_name . ' has shared your post to their profile.',
-                'notifyBy' => 'Post Share To Profile',
+                'message' => $user->first_name . ' has shared your group post to their profile.',
+                'notifyBy' => 'Group Post Share to Profile',
+                'action_type' => 'sharedGroupPostToProfile',
+                'action_id' => $newPost->id,
             ]);
 
             $sharedToProfile = true;
         }
 
+        // ✅ Group Sharing
         if ($request->share_to == 'group' || $request->share_to == 'both') {
-            // $group = Group::where('creator_id', $user->id)->where('id', $request->group_id)->first();
+            $group = Group::find($request->group_id);
 
-            // if (!$group) {
-            //     return response()->json(['status' => false, 'message' => 'Group not found or you do not have permission.']);
-            // }
+            // 👇 Member check
+            $isMember = \DB::table('group_user')
+                ->where('group_id', $group->id)
+                ->where('user_id', $user->id)
+                ->exists();
 
+            if (!$group || !$isMember) {
+                return response()->json(['status' => false, 'message' => 'Group not found or you do not have permission.']);
+            }
 
             $imagePaths = [];
             foreach (json_decode($post->image) as $image) {
-
                 $originalPath = public_path('GroupPosts/' . $image);
                 $newPath = public_path('GroupPosts/' . $image);
 
@@ -516,13 +540,22 @@ class PostController extends Controller
             }
 
             GroupPost::create([
-                'group_id' => $request->group_id,
+                'group_id' => $group->id,
                 'user_id' => $user->id,
                 'description' => $post->description,
                 'image' => json_encode($imagePaths),
                 'share' => 1,
                 'share_person' => $originalPoster->first_name . ' ' . $originalPoster->last_name,
                 'hide' => 1,
+            ]);
+
+            // 🔔 Optional: Notify the original post owner if you want
+            Notification::create([
+                'user_id' => $originalPoster->id,
+                'message' => $user->first_name . ' has shared your group post to another group.',
+                'notifyBy' => 'Group Post Share to Group',
+                'action_type' => 'sharedGroupPostToGroup',
+                'action_id' => $post->id,
             ]);
 
             $sharedToGroup = true;

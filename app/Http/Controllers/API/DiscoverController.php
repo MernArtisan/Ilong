@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Mail\DisputeNotification;
 use App\Models\Availability;
 use App\Models\Booking;
+use App\Models\ContentPostComment;
 use App\Models\Group;
 use App\Models\ProfessionalEarning;
 use App\Models\ProfessionalProfile;
@@ -18,9 +19,12 @@ use Exception;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use App\Mail\ZoomMeetingCreate;
+use App\Models\Comment;
+use App\Models\GroupPost;
 use App\Models\Message;
 use App\Models\Notification;
 use App\Models\Payment;
+use App\Models\Post;
 use App\Models\ZoomMeeting;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Http;
@@ -66,12 +70,12 @@ class DiscoverController extends Controller
                 ->get()
                 ->map(function ($user) {
                     $user->image = asset('profile_image/' . $user->image);
-     
-                    $user->hour_rate = $user->professionalProfile->hour_rate ?? null; 
-    
+
+                    $user->hour_rate = $user->professionalProfile->hour_rate ?? null;
+
                     return $user;
                 });
-    
+
             return response()->json([
                 'status' => true,
                 'professional' => $professional,
@@ -90,39 +94,39 @@ class DiscoverController extends Controller
         try {
             $profession = User::with('professionalProfile', 'experiences', 'licenses')->findOrFail($id);
             $fullName = trim($profession->first_name . ' ' . $profession->last_name);
-    
+
             // Check if skills and languages are arrays or JSON strings and decode them if necessary
             $skills = is_string($profession->professionalProfile->skills)
                 ? json_decode($profession->professionalProfile->skills, true)
                 : $profession->professionalProfile->skills ?? ['N/A'];
-    
+
             $languages = is_string($profession->professionalProfile->languages)
                 ? json_decode($profession->professionalProfile->languages, true)
                 : $profession->professionalProfile->languages ?? ['N/A'];
-    
+
             // Calculate total experience in months
             $totalExperienceMonths = 0;
-    
+
             foreach ($profession->experiences as $experience) {
                 $fromDate = \Carbon\Carbon::parse($experience->from);
                 // If 'to' is null, use the current date for ongoing experience
                 $toDate = $experience->to ? \Carbon\Carbon::parse($experience->to) : now();
-    
+
                 // Calculate the difference in months for each experience
                 $diffInMonths = $fromDate->diffInMonths($toDate);
                 $totalExperienceMonths += $diffInMonths;
             }
-    
+
             // Convert total months to years and months
             $totalExperienceYears = intdiv($totalExperienceMonths, 12);
             $remainingMonths = $totalExperienceMonths % 12;
-    
+
             // Prepare the experience string
             $experienceString = $totalExperienceYears . ' years';
             if ($remainingMonths > 0) {
                 $experienceString .= ' and ' . $remainingMonths . ' months';
             }
-    
+
             return response()->json([
                 "status" => true,
                 "professional" => [
@@ -152,7 +156,7 @@ class DiscoverController extends Controller
             ], 404);
         }
     }
-    
+
     public function getAvailableSlots($userId, Request $request)
     {
         try {
@@ -297,7 +301,7 @@ class DiscoverController extends Controller
             return ['status' => false, 'message' => 'An error occurred: ' . $e->getMessage()];
         }
     }
-    
+
     protected function generateToken(): string
     {
         try {
@@ -326,7 +330,7 @@ class DiscoverController extends Controller
             'video' => 'required|file|mimes:mp4,avi,mkv',
             'description' => 'required|string|max:1000',
         ]);
-        
+
 
         $user = auth()->user();
 
@@ -412,50 +416,58 @@ class DiscoverController extends Controller
         $user = auth()->user();
         $video = UserVideo::find($videoId);
 
+        if (!$video) {
+            return response()->json([
+                'error' => 'Video not found.',
+            ], 404);
+        }
+
         $owner = $video->user;
+
         if (!$owner) {
             return response()->json([
                 'status' => false,
                 'message' => 'Video owner not found.'
             ]);
         }
+
         $fcmToken = $owner->fcm_token;
         $UserId = $owner->id;
 
-        if (!$video) {
-            return response()->json([
-                'error' => 'Video not found.',
-            ], 404);
-        }
         $existingLike = VideoLike::where('user_id', $user->id)
             ->where('video_id', $videoId)
             ->first();
+
         if ($existingLike) {
             $existingLike->delete();
             return response()->json([
                 'status' => false,
-                'message' => 'Video Unliked successfully.',
+                'message' => 'Video unliked successfully.',
             ], 400);
         }
 
         $authUser = auth()->user();
 
         Notification::create([
-            'user_id' => $UserId,
-            'message' => $authUser->first_name . ' has liked your Video.',
-            'notifyBy' => 'Like Video',
+            'user_id'     => $UserId,
+            'message'     => $authUser->first_name . ' has liked your video.',
+            'notifyBy'    => 'Like Video',
+            'action_type' => 'likedVideo',
+            'action_id'   => $videoId,
         ]);
 
         VideoLike::create([
-            'user_id' => $user->id,
+            'user_id'  => $user->id,
             'video_id' => $videoId,
         ]);
+
         return response()->json([
-            'status' => true,
+            'status'    => true,
+            'message'   => 'Video liked successfully.',
             'fcm_token' => $fcmToken,
-            'message' => 'Video liked successfully.',
         ], 200);
     }
+
 
     public function commentOnVideo(Request $request, $videoId)
     {
@@ -472,15 +484,19 @@ class DiscoverController extends Controller
                 'error' => 'Video not found.',
             ]);
         }
+
         $owner = $video->user;
+
         if (!$owner) {
             return response()->json([
                 'status' => false,
                 'message' => 'Video owner not found.'
             ]);
         }
+
         $fcmToken = $owner->fcm_token;
         $UserId = $owner->id;
+
         VideoComment::create([
             'user_id' => $user->id,
             'video_id' => $videoId,
@@ -490,38 +506,41 @@ class DiscoverController extends Controller
         $authUser = auth()->user();
 
         Notification::create([
-            'user_id' => $UserId,
-            'message' => $authUser->first_name . ' has Commented your Video.',
-            'notifyBy' => 'Commented Video',
+            'user_id'     => $UserId,
+            'message'     => $authUser->first_name . ' has commented on your video.',
+            'notifyBy'    => 'Commented Video',
+            'action_type' => 'commentVideo',
+            'action_id'   => $videoId,
         ]);
 
         return response()->json([
-            'status' => true,
+            'status'    => true,
+            'message'   => 'Comment added successfully.',
             'fcm_token' => $fcmToken,
-            'message' => 'Comment added successfully.',
         ]);
     }
-    
-   public function MyVideos()
-   {
-       try {
+
+
+    public function MyVideos()
+    {
+        try {
             $user = auth()->user();
-    
+
             // Get only videos of the authenticated user
             $videos = UserVideo::with('user') // eager load user
                 ->where('user_id', $user->id)
                 ->orderBy('id', 'desc')
                 ->get();
-    
+
             $videos = $videos->map(function ($video) use ($user) {
                 $isLiked = VideoLike::where('user_id', $user->id)
                     ->where('video_id', $video->id)
                     ->exists();
-    
+
                 $comments = VideoComment::where('video_id', $video->id)
                     ->with('user')
                     ->get();
-    
+
                 $CommentWithUsers = $comments->map(function ($comment) {
                     return [
                         'user_id' => $comment->user->id,
@@ -530,7 +549,7 @@ class DiscoverController extends Controller
                         'comment' => $comment->comment,
                     ];
                 });
-    
+
                 return [
                     'id' => $video->id,
                     'user_id' => $video->user_id,
@@ -544,12 +563,11 @@ class DiscoverController extends Controller
                     'Comments' => $CommentWithUsers,
                 ];
             });
-    
+
             return response()->json([
                 'status' => true,
                 'videos' => $videos,
             ], 200);
-    
         } catch (\Exception $e) {
             return response()->json([
                 'status' => false,
@@ -557,39 +575,38 @@ class DiscoverController extends Controller
             ], 500);
         }
     }
-    
-    
+
+
     public function deleteMyVideo($id)
     {
         try {
             $user = auth()->user();
-    
+
             // Find the video and ensure it's owned by the logged-in user
             $video = \App\Models\UserVideo::where('id', $id)
                 ->where('user_id', $user->id)
                 ->first();
-    
+
             if (!$video) {
                 return response()->json([
                     'status' => false,
                     'message' => 'Video not found or access denied.'
                 ], 404);
             }
-    
+
             // Delete video file from public/uservideos
             $videoPath = public_path('uservideos/' . $video->video);
             if (file_exists($videoPath)) {
                 unlink($videoPath);
             }
-    
+
             // Delete the video record
             $video->delete();
-    
+
             return response()->json([
                 'status' => true,
                 'message' => 'Video deleted successfully.'
             ], 200);
-    
         } catch (\Exception $e) {
             return response()->json([
                 'status' => false,
@@ -604,26 +621,26 @@ class DiscoverController extends Controller
         $request->validate([
             'description' => 'required|string|max:1000',
         ]);
-    
+
         try {
             $user = auth()->user();
-    
+
             // Find user's own video
             $video = \App\Models\UserVideo::where('id', $id)
                 ->where('user_id', $user->id)
                 ->first();
-    
+
             if (!$video) {
                 return response()->json([
                     'status' => false,
                     'message' => 'Video not found or access denied.'
                 ], 404);
             }
-    
+
             // Update only description
             $video->description = $request->description;
             $video->save();
-    
+
             return response()->json([
                 'status' => true,
                 'message' => 'Video description updated successfully.',
@@ -633,16 +650,15 @@ class DiscoverController extends Controller
                     'updated_at' => $video->updated_at->diffForHumans(),
                 ]
             ], 200);
-    
         } catch (\Exception $e) {
             return response()->json([
                 'status' => false,
                 'error' => $e->getMessage()
             ], 500);
         }
-}
+    }
 
-    
+
 
     public function completeBooking(Request $request)
     {
@@ -862,7 +878,7 @@ class DiscoverController extends Controller
             // Map earnings into the desired format
             $formattedEarnings = $earnings->map(function ($earning) {
                 $booking = Booking::find($earning->booking_id);
-            
+
                 return [
                     'booking_id' => $booking ? 'NJE' . str_pad($booking->id, 9, '0', STR_PAD_LEFT) : null,
                     'earning_amount' => $earning->earning_amount,
@@ -870,7 +886,7 @@ class DiscoverController extends Controller
                     'date_time' => $earning->created_at->format('d M, Y h:i A'),
                 ];
             });
-            
+
             // Return the response with the data
             return response()->json([
                 'status' => true,
@@ -1009,8 +1025,8 @@ class DiscoverController extends Controller
     public function seenNotification(Request $request)
     {
         $user = auth()->user();
-        $notification = Notification::where('user_id',$user->id)->where('seen', 0)->get();
-        $notification->each(function($notification){
+        $notification = Notification::where('user_id', $user->id)->where('seen', 0)->get();
+        $notification->each(function ($notification) {
             $notification->update([
                 'seen' => 1,
             ]);
@@ -1025,14 +1041,18 @@ class DiscoverController extends Controller
     public function getNotification(Request $request)
     {
         $user = auth()->user();
-        $notifications = Notification::where('user_id', $user->id)->orderBy('created_at', 'desc')->get();
+        $notifications = Notification::where('user_id', $user->id)
+            ->orderBy('created_at', 'desc')
+            ->get();
 
         $notifications = $notifications->map(function ($notification) {
             return [
                 'id' => $notification->id,
                 'message' => $notification->message,
                 'notify' => $notification->notifyBy,
-                'created_at' => Carbon::parse($notification->created_at)->diffForHumans(),  
+                'action_type' => $notification->action_type, // for app redirection
+                'action_id' => $notification->action_id,     // for app redirection
+                'created_at' => Carbon::parse($notification->created_at)->diffForHumans(),
             ];
         });
 
@@ -1042,5 +1062,99 @@ class DiscoverController extends Controller
                 'notifications' => $notifications,
             ]
         ], 200);
+    }
+
+
+    public function getActionData(Request $request)
+    {
+        $request->validate([
+            'action_type' => 'required|string',
+            'action_id' => 'required|integer',
+        ]);
+
+        $type = $request->query('action_type');
+        $id   = $request->query('action_id');
+        $user = auth()->user();
+
+        switch ($type) {
+            case 'likePost':
+            case 'commentPost':
+            case 'sharePostToProfile':
+            case 'sharePostToGroup':
+            case 'sharedGroupPostToProfile':
+                $post = Post::with('images', 'user')->find($id);
+                if (!$post) return response()->json(['status' => false, 'message' => 'Post not found.']);
+
+
+
+                if ($type === 'commentPost') {
+                    $comment = ContentPostComment::where('post_id', $id)
+                        ->where('user_id', $user->id)
+                        ->latest()
+                        ->first();
+                }
+
+
+                return response()->json([
+                    'status' => true,
+                    'type' => $type,
+                    'data' => [
+                        'id' => $post->id,
+                        'user_id' => $post->user_id,
+                        'image' => asset('profile_image/' . $post->user->image),
+                        'first_name' => $post->user->first_name,
+                        'role' => $post->user->role,
+                        'content' => $post->content,
+                        'share' => $post->share,
+                        'share_person' => $post->share_person,
+                        'images' => $post->images->map(fn($img) => asset('contentpost/' . $img->image_path)),
+                        'likes' => $post->likes()->count(),
+                        'comments' => $post->comments()->count(),
+                        'shares' => $post->share_count ?? 0,
+                        'is_like' => $post->likes()->where('user_id', $user->id)->exists(),
+                        'hide' => $post->hide,
+                        'comment_id' => $comment ?? null,
+                    ]
+                ]);
+
+            case 'groupPostLike':
+            case 'groupPostComment':
+            case 'sharedGroupPost':
+            case 'sharedGroupPostToGroup':
+                $groupPost = GroupPost::with('user')->find($id);
+                if (!$groupPost) return response()->json(['status' => false, 'message' => 'Group post not found.']);
+
+
+                if ($type === 'groupPostComment') {
+                    $comment = Comment::where('post_id', $id)
+                        ->where('user_id', $user->id)
+                        ->latest()
+                        ->first();
+                }
+
+                return response()->json([
+                    'status' => true,
+                    'type' => $type,
+                    'data' => [
+                        'id' => $groupPost->id,
+                        'description' => $groupPost->description,
+                        'images' => collect(json_decode($groupPost->image))->map(fn($img) => asset('GroupPosts/' . $img)),
+                        'user_id' => $groupPost->user_id,
+                        'image' => asset('profile_image/' . $groupPost->user->image),
+                        'first_name' => $groupPost->user->first_name,
+                        'role' => $groupPost->user->role,
+                        'likes' => $groupPost->likes()->count(),
+                        'comments' => $groupPost->comments()->count(),
+                        'shares' => $groupPost->share_count ?? 0,
+                        'share' => $groupPost->share,
+                        'is_like' => $groupPost->likes()->where('user_id', $user->id)->exists(),
+                        'hide' => $groupPost->hide,
+                        'share_person' => $groupPost->share_person,
+                        'comment_id' => $comment ?? null,
+                    ]
+                ]);
+        }
+
+        return response()->json(['status' => false, 'message' => 'Invalid action type.']);
     }
 }

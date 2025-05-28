@@ -43,7 +43,7 @@ Route::middleware(['auth:sanctum'])->group(function () {
     Route::post('share-group-post', [PostController::class, 'shareGroupPost']);
 
     Route::post('post/{postId}/like', [PostController::class, 'likePost']);
-    Route::post('/post/{postId}/comment', [PostController::class, 'addComment']);
+    Route::post('post/{postId}/comment', [PostController::class, 'addComment']);
 
     Route::post('groups',  [GroupController::class, 'createGroup']);
     Route::get('/groups',  [GroupController::class, 'listGroups']);
@@ -95,7 +95,7 @@ Route::middleware(['auth:sanctum'])->group(function () {
     Route::get('/get-videos-random-order', [DiscoverController::class, 'getVideos']);
     Route::post('videos/{videoId}/like', [DiscoverController::class, 'likeVideo']);
     Route::post('videos/{videoId}/comment', [DiscoverController::class, 'commentOnVideo']);
-    Route::get('/videos/{videoId}/comments', [DiscoverController::class, 'getComments']);
+    Route::get('videos/{videoId}/comments', [DiscoverController::class, 'getComments']);
     Route::get('user-search', [DiscoverController::class, 'search']);
     Route::get('pro-earning', [DiscoverController::class, 'earning']);
 
@@ -105,6 +105,8 @@ Route::middleware(['auth:sanctum'])->group(function () {
     Route::get('get-slots', [DiscoverController::class, 'getSlots']);
     Route::get('notification-get', [DiscoverController::class, 'getNotification']);
     Route::post('seen-notifications', [DiscoverController::class, 'seenNotification']);
+    Route::get('notification/data', [DiscoverController::class, 'getActionData']);
+
     // likepost //
     // commenpost //
     // sharepost //
