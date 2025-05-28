@@ -1086,7 +1086,6 @@ class DiscoverController extends Controller
                 if (!$post) return response()->json(['status' => false, 'message' => 'Post not found.']);
 
 
-
                 if ($type === 'commentPost') {
                     $comment = ContentPostComment::where('post_id', $id)
                         ->where('user_id', $user->id)
@@ -1151,6 +1150,35 @@ class DiscoverController extends Controller
                         'hide' => $groupPost->hide,
                         'share_person' => $groupPost->share_person,
                         'comment_id' => $comment ?? null,
+                    ]
+                ]);
+
+            case 'likedVideo':
+            case 'commentVideo':
+                $video = UserVideo::with(['user', 'comments.user'])->find($id);
+                if (!$video) return response()->json(['status' => false, 'message' => 'Video not found.']);
+
+                return response()->json([
+                    'status' => true,
+                    'type' => $type,
+                    'data' => [
+                        'id' => $video->id,
+                        'user_id' => $video->user_id,
+                        'user_name' => $video->user->first_name . ' ' . $video->user->last_name,
+                        'video' => asset('uservideos/' . $video->video),
+                        'description' => $video->description,
+                        'created_at' => $video->created_at->diffForHumans(),
+                        'is_liked' => $video->likes()->where('user_id', $user->id)->exists(),
+                        'likeCount' => $video->likes()->count(),
+                        'commentCount' => $video->comments()->count(),
+                        'Comments' => $video->comments->map(function ($c) {
+                            return [
+                                'user_id' => $c->user_id,
+                                'user_name' => $c->user->first_name . ' ' . $c->user->last_name,
+                                'image' => asset('profile_image/' . $c->user->image),
+                                'comment' => $c->comment,
+                            ];
+                        })
                     ]
                 ]);
         }
