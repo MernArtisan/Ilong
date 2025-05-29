@@ -1085,7 +1085,7 @@ class DiscoverController extends Controller
                 $post = Post::with('images', 'user')->find($id);
                 if (!$post) return response()->json(['status' => false, 'message' => 'Post not found.']);
 
-
+                $comment = null;
                 if ($type === 'commentPost') {
                     $comment = ContentPostComment::where('post_id', $id)
                         ->where('user_id', $user->id)
@@ -1093,6 +1093,14 @@ class DiscoverController extends Controller
                         ->first();
                 }
 
+                $group = null;
+                if ($type === 'sharePostToGroup' || $type === 'sharedGroupPostToProfile') {
+                    $groupPost = GroupPost::with('group')
+                        ->latest()
+                        ->first();
+
+                    // $group = $groupPost?->group;
+                }
 
                 return response()->json([
                     'status' => true,
@@ -1100,7 +1108,10 @@ class DiscoverController extends Controller
                     'data' => [
                         'id' => $post->id,
                         'user_id' => $post->user_id,
-                        'image' => asset('profile_image/' . $post->user->image),
+                        'image' => $post->user->image
+                            ? asset('profile_image/' . $post->user->image)
+                            : asset('default.png'),
+
                         'first_name' => $post->user->first_name,
                         'role' => $post->user->role,
                         'content' => $post->content,
@@ -1112,7 +1123,14 @@ class DiscoverController extends Controller
                         'shares' => $post->share_count ?? 0,
                         'is_like' => $post->likes()->where('user_id', $user->id)->exists(),
                         'hide' => $post->hide,
-                        'comment_id' => $comment ?? null,
+                        'comment_id' => $comment?->id,
+                        'comment_text' => $comment?->comment,
+                        // 'group' => $group ? [
+                            'group_id' => $groupPost->group->id ?? null,
+                            'group_name' => $groupPost->group->name ?? null,
+                            // 'image' => asset('group_images/' . $group->image),
+                            // 'description' => $group->description,
+                        // ] : null,
                     ]
                 ]);
 
@@ -1120,10 +1138,10 @@ class DiscoverController extends Controller
             case 'groupPostComment':
             case 'sharedGroupPost':
             case 'sharedGroupPostToGroup':
-                $groupPost = GroupPost::with('user')->find($id);
+                $groupPost = GroupPost::with(['user', 'group'])->find($id);
                 if (!$groupPost) return response()->json(['status' => false, 'message' => 'Group post not found.']);
 
-
+                $comment = null;
                 if ($type === 'groupPostComment') {
                     $comment = Comment::where('post_id', $id)
                         ->where('user_id', $user->id)
@@ -1139,7 +1157,7 @@ class DiscoverController extends Controller
                         'description' => $groupPost->description,
                         'images' => collect(json_decode($groupPost->image))->map(fn($img) => asset('GroupPosts/' . $img)),
                         'user_id' => $groupPost->user_id,
-                        'image' => asset('profile_image/' . $groupPost->user->image),
+                        'image' => asset('profile_image/' . $groupPost->user->image) ?? asset('default.png'),
                         'first_name' => $groupPost->user->first_name,
                         'role' => $groupPost->user->role,
                         'likes' => $groupPost->likes()->count(),
@@ -1149,7 +1167,14 @@ class DiscoverController extends Controller
                         'is_like' => $groupPost->likes()->where('user_id', $user->id)->exists(),
                         'hide' => $groupPost->hide,
                         'share_person' => $groupPost->share_person,
-                        'comment_id' => $comment ?? null,
+                        'comment_id' => $comment?->id,
+                        'comment_text' => $comment?->comment,
+                        // 'group' => $group ? [
+                            'group_id' => $groupPost->group->id ?? null, // $group->id ?? null,
+                            'group_name' => $groupPost->group->name ?? null,
+                            // 'image' => asset('group_images/' . $group->image),
+                            // 'description' => $group->description,
+                        // ] : null,
                     ]
                 ]);
 
