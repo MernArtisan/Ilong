@@ -1157,7 +1157,9 @@ class DiscoverController extends Controller
                         'description' => $groupPost->description,
                         'images' => collect(json_decode($groupPost->image))->map(fn($img) => asset('GroupPosts/' . $img)),
                         'user_id' => $groupPost->user_id,
-                        'image' => asset('profile_image/' . $groupPost->user->image) ?? asset('default.png'),
+                        'image' => $groupPost->user->image
+                            ? asset('profile_image/' . $groupPost->user->image)
+                            : asset('default.png'),
                         'first_name' => $groupPost->user->first_name,
                         'role' => $groupPost->user->role,
                         'likes' => $groupPost->likes()->count(),

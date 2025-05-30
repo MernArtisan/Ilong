@@ -307,7 +307,9 @@ class PostController extends Controller
                 'comment' => $post->comment,
                 'user_id' => $post->user->id,
                 'first_name' => $post->user->first_name,
-                'image' => asset('profile_image/' . $post->user->image)
+                'image' => $post->user->image
+                            ? asset('profile_image/' . $post->user->image)
+                            : asset('default.png'),
                 // 'role'=> $comments->user->role,
                 // 'likes'=> $comments->likes->count(),
                 // 'shares'=> rand(1, 20),
