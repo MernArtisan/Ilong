@@ -380,7 +380,7 @@ class DiscoverController extends Controller
                     return [
                         'user_id' => $Comment->user->id,
                         'user_name' => $Comment->user->first_name . ' ' . $Comment->user->last_name,  // Assuming `name` is a field in the `users` table
-                        'image' => asset('profile_image/' . $Comment->user->image),
+                        'image' => asset('profile_image/' . ($user->image ?? 'default.png')),
                         'comment' => $Comment->comment,
                     ];
                 });

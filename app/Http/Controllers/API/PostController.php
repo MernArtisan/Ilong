@@ -110,7 +110,7 @@ class PostController extends Controller
                 'posts' => []
             ]);
         }
- 
+
         $user = User::with(['posts.images', 'posts.likes', 'posts.comments'])
             ->where('id', $userId)
             ->first();
@@ -142,7 +142,8 @@ class PostController extends Controller
 
             return [
                 'id' => $post->id,
-                'image' => asset('profile_image/' . $user->image),
+                'image' => $user->image ? asset('profile_image/' . $user->image) : asset('default.png'),
+                'cover_image' => asset('profile_image/' . ($user->cover_image ?? 'default.png')),
                 'user_name' => $user->first_name,
                 'user_role' => $user->role,
                 'content' => $post->content,
@@ -176,7 +177,7 @@ class PostController extends Controller
 
     public function likePost(Request $request, $postId)
     {
-        $userId = auth()->id();  
+        $userId = auth()->id();
         $like = ContentPostLike::where('post_id', $postId)->where('user_id', $userId)->first();
         $postOwner = Post::where('id', $postId)->with('user')->first();  // Load user relationship too
 
@@ -308,8 +309,8 @@ class PostController extends Controller
                 'user_id' => $post->user->id,
                 'first_name' => $post->user->first_name,
                 'image' => $post->user->image
-                            ? asset('profile_image/' . $post->user->image)
-                            : asset('default.png'),
+                    ? asset('profile_image/' . $post->user->image)
+                    : asset('default.png'),
                 // 'role'=> $comments->user->role,
                 // 'likes'=> $comments->likes->count(),
                 // 'shares'=> rand(1, 20),
