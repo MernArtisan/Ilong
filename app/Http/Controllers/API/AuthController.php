@@ -173,10 +173,10 @@ class AuthController extends Controller
             'created_at' => now(),
         ]);
     
-       Mail::raw("Your OTP for password reset is: $otp", function ($message) use ($request) {
-        $message->to($request->email)
-                    ->subject('Password Reset OTP');
-        });
+    //    Mail::raw("Your OTP for password reset is: $otp", function ($message) use ($request) {
+    //     $message->to($request->email)
+    //                 ->subject('Password Reset OTP');
+    //     });
     
         return response()->json([
             'status' => true,
